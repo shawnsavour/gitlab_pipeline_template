@@ -22,7 +22,7 @@ git push -uf origin main
 
 ## Integrate with your tools
 
-- [ ] [Set up project integrations](https://git.vmo.dev/c2/hll21054-hll-hello-kyc/operation-2023/pipeline-template/-/settings/integrations)
+- [ ] [Set up project integrations]()
 
 ## Collaborate with your team
 
