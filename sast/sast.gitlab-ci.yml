@@ -1,0 +1,143 @@
+---
+include:
+  - project: c2/hll21054-hll-hello-kyc/operation-2023/pipeline-template
+    ref: main
+    file:
+      - 'docker/docker.gitlab-ci.yml'
+      - 'build/build.gitlab-ci.yml'
+
+.rule_develop: &rule_develop
+  rules:
+    - if: '$CI_COMMIT_BRANCH != "develop"'
+      when: never
+    - when: on_success
+
+.disable_sonarqube: &disable_sonarqube
+  rules:
+    - if: '$CI_DISABLE_SONARQUBE == "true"'
+      when: never
+
+# enable sonarqube if branch is sonarqube
+.enable_sonarqube: &enable_sonarqube
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "sonarqube"'
+      when: always
+
+.disable_dependency_check: &disable_dependency_check
+  rules:
+    - if: '$CI_DISABLE_DEPENDENCY_CHECK == "true"'
+      when: never
+
+.disable_snyk: &disable_snyk
+  rules:
+    # - if: '$CI_DISABLE_SNYK == "true"'
+    #   when: never
+    - if: $SNYK_TOKEN == null
+      when: never
+    # alway disable snyk if not have CI_ENABLE_SNYK
+    - if: $CI_ENABLE_SNYK == null
+      when: never
+
+.disable_trivy: &disable_trivy
+  rules:
+    - if: '$CI_DISABLE_TRIVY == "true"'
+      when: never
+
+.disable_all_scans: &disable_all_scans
+  rules:
+    - if: '$DISABLE_ALL_SCANS == "true"'
+      when: never
+
+.artifact: &artifact
+  artifacts:
+    paths:
+      - $CI_PROJECT_DIR/.sonarqube
+
+.dependency-check:
+  extends:
+    - .docker_templates
+    - .tags_template
+    - .caching_template
+  image: owasp/dependency-check
+  services: null
+  variables:
+    DEPENDENCY_CHECK_REPORT_PATH: $CI_PROJECT_DIR/.dependency-check
+    DEPENDENCY_CHECK_REPORT_FORMAT: "ALL"
+  script:
+    # - yarn
+    - ls -al
+    - /usr/share/dependency-check/bin/dependency-check.sh --scan $CI_PROJECT_DIR --format ALL --out $DEPENDENCY_CHECK_REPORT_PATH
+  allow_failure: true
+  rules:
+    - !reference [.disable_all_scans, rules]
+    - !reference [.disable_dependency_check, rules]
+    - !reference [.rule_develop, rules]
+  artifacts:
+    when: always
+    paths:
+      - $DEPENDENCY_CHECK_REPORT_PATH
+    reports:
+      dependency_scanning: $DEPENDENCY_CHECK_REPORT_PATH/dependency-check-report.xml
+
+.sonarqube-scan:
+  extends:
+    - .docker_templates
+    - .tags_template
+    - .artifact
+  image: sonarsource/sonar-scanner-cli
+  services: null
+  variables:                             # Tells git to fetch all the branches of the project, required by the analysis task
+    SONAR_SCANNER_OPTS: "-Dsonar.projectKey=$CI_PROJECT_NAME -Dsonar.dependencyCheck.jsonReportPath=$CI_PROJECT_DIR/.dependency-check/dependency-check-report.json -Dsonar.dependencyCheck.htmlReportPath=$CI_PROJECT_DIR/.dependency-check/dependency-check-report.html -Dsonar.dependencyCheck.xmlReportPath=$CI_PROJECT_DIR/.dependency-check/dependency-check-report.xml"
+  needs: ["dependency-check"]
+  script:
+    - sonar-scanner
+  allow_failure: true
+  dependencies:
+    - dependency-check
+  rules:
+    # - !reference [.enable_sonarqube, rules]
+    - !reference [.disable_all_scans, rules]
+    - !reference [.disable_sonarqube, rules]
+    - !reference [.rule_develop, rules]
+
+.snyk-scan:
+  extends:
+    - .docker_templates
+    - .tags_template
+  image: snyk/snyk:node
+  services: null
+  script:
+    - snyk monitor
+    - snyk test
+  allow_failure: true
+  rules:
+    - !reference [.disable_all_scans, rules]
+    - !reference [.disable_snyk, rules]
+    - !reference [.rule_develop, rules]
+
+.trivy-scan:
+  extends:
+    - .docker_templates
+    - .tags_template
+    - .before_script_template
+  # image: aquasec/trivy:0.41.0
+  # services: null
+  script:
+    - !reference [.image_info_template, script]
+    # scan image
+    - !reference [.docker_ecr_templates, login]
+    # - trivy image $IMAGE_FIX
+    - docker pull $IMAGE_FIX
+    - docker run --rm -v /var/run/docker.sock:/var/run/docker.sock -v $CI_PROJECT_DIR:/workdir aquasec/trivy:0.41.0 image --exit-code 0 -o /workdir/.trivy-report.md $IMAGE_FIX
+  allow_failure: true
+  rules:
+    - !reference [.disable_all_scans, rules]
+    - !reference [.disable_trivy, rules]
+    - !reference [.rules_template, rules]
+  needs:
+    - build
+  artifacts:
+    paths:
+      - $CI_PROJECT_DIR/.trivy-report.md
+    reports:
+      container_scanning: $CI_PROJECT_DIR/.trivy-report.md

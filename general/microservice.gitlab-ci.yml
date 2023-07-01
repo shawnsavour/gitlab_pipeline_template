@@ -1,0 +1,26 @@
+---
+include:
+  - project: c2/hll21054-hll-hello-kyc/operation-2023/pipeline-template
+    ref: main
+    file:
+      - 'build/build.gitlab-ci.yml'
+      - 'sast/sast.gitlab-ci.yml'
+
+build:
+  extends:
+    - .build
+
+dependency-check:
+  extends:
+    - .dependency-check
+sonarqube-scan:
+  extends:
+    - .sonarqube-scan
+
+snyk-scan:
+  extends:
+    - .snyk-scan
+
+trivy-scan:
+  extends:
+    - .trivy-scan

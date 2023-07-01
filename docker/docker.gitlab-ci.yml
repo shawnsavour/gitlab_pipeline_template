@@ -1,0 +1,25 @@
+---
+.docker_templates:
+  variables:
+    # common variable
+    DOCKER_HOST: tcp://localhost:2375
+    DOCKER_DRIVER: overlay2
+    DOCKER_TLS_CERTDIR: ""
+    # enable buildkit
+    # DOCKER_BUILDKIT: 1
+    # enable layer-cache
+    # DOCKER_BUILDKIT_CACHE: 1
+  services:
+    - docker:stable-dind
+  image:
+    name: public.ecr.aws/g5j7s8k4/ci-node:v14-gitops
+  artifacts:
+    paths:
+      - dist
+
+.docker_ecr_templates:
+  login:
+    # pre pull image => reused layer-cache (because install package very slow)
+    - >
+      aws ecr get-login-password --region $AWS_DEFAULT_REGION |
+      docker login --username AWS --password-stdin $DOCKER_REGISTRY_HOST
